@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\FasilitasController;
 use App\Http\Controllers\GaleriController;
 use App\Http\Controllers\KamarController;
@@ -16,6 +17,8 @@ use App\Http\Controllers\TagihanController;
 use Illuminate\Support\Facades\Route;
 
 // PUBLIC ROUTES (Authentication & Landing Page Kos)
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/auth/google', [AuthController::class, 'googleAuth']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
@@ -49,10 +52,12 @@ Route::middleware(['auth:api'])->group(function () {
         Route::apiResource('/pengumuman', PengumumanController::class)->only(['index', 'show']);
 
         Route::apiResource('/penyewa', PenyewaController::class)->only(['index', 'show', 'store', 'update']);
-        Route::apiResource('/kontrak-sewa', KontrakSewaController::class)->only(['index', 'show']);
+        Route::apiResource('/kontrak-sewa', KontrakSewaController::class)->only(['index', 'show', 'store']);
         Route::apiResource('/tagihan', TagihanController::class)->only(['index', 'show']);
         Route::apiResource('/pembayaran', PembayaranController::class)->only(['index', 'show', 'store']);
         Route::apiResource('/laporan', LaporanController::class)->only(['index', 'show', 'store']);
+        Route::get('/chat', [ChatController::class, 'index']);
+        Route::post('/chat', [ChatController::class, 'store']);
     });
 
     // 2. AKSES OPERASIONAL PENGELOLA (Administrator & Admin/Pekerja Kos)
@@ -63,7 +68,7 @@ Route::middleware(['auth:api'])->group(function () {
         Route::apiResource('/kamar-fasilitas', KamarFasilitasController::class)->only(['store', 'destroy']);
         Route::apiResource('/galeri', GaleriController::class)->only(['store', 'update', 'destroy']);
 
-        Route::apiResource('/kontrak-sewa', KontrakSewaController::class)->only(['store', 'update']);
+        Route::apiResource('/kontrak-sewa', KontrakSewaController::class)->only(['update']);
         Route::apiResource('/tagihan', TagihanController::class)->only(['store', 'update']);
         Route::apiResource('/pembayaran', PembayaranController::class)->only(['update']);
         Route::apiResource('/laporan', LaporanController::class)->only(['update']);

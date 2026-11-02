@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Penyewa;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -57,6 +58,165 @@ class AuthController extends Controller
             'success' => false,
             'message' => 'user creation failed'
         ], 500);
+    }
+
+    public function register(Request $request)
+    {
+        $rules = [
+            'nama'          => 'nullable|string|max:100',
+            'email'         => 'required|email|unique:users,email',
+            'password'      => 'required|string|min:8',
+            'nomor_telepon' => 'nullable|string|max:20',
+        ];
+
+        // Jika pengunjung sekaligus mengirim data identitas penyewa (opsional saat daftar awal)
+        if ($request->filled('nik')) {
+            $rules['nik']                  = 'required|string|size:16|unique:penyewa,nik';
+            $rules['jenis_kelamin']        = 'required|in:laki-laki,perempuan';
+            $rules['alamat_asal']          = 'required|string';
+            $rules['pekerjaan']            = 'nullable|string|max:100';
+            $rules['nama_kontak_darurat']  = 'nullable|string|max:100';
+            $rules['nomor_kontak_darurat'] = 'nullable|string|max:20';
+            $rules['foto_ktp']             = 'nullable|image|mimes:jpeg,png,jpg|max:2048';
+        }
+
+        $validator = Validator::make($request->all(), $rules, [
+            'email.unique' => 'Alamat email ini sudah terdaftar. Silakan masuk (login).',
+            'nik.size'     => 'NIK harus berjumlah tepat 16 digit sesuai KTP.',
+            'nik.unique'   => 'NIK ini sudah terdaftar pada sistem kos.',
+            'password.min' => 'Kata sandi minimal terdiri dari 8 karakter.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $fotoKtpPath = null;
+        if ($request->hasFile('foto_ktp')) {
+            $fotoKtpPath = $request->file('foto_ktp')->store('ktp', 'public');
+        }
+
+        $defaultNama = $request->filled('nama')
+            ? $request->nama
+            : ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $request->email)[0]));
+
+        $user = DB::transaction(function () use ($request, $fotoKtpPath, $defaultNama) {
+            $newUser = User::create([
+                'nama'          => $defaultNama,
+                'email'         => $request->email,
+                'password'      => bcrypt($request->password),
+                'nomor_telepon' => $request->nomor_telepon ?: '-',
+                'role'          => 'penyewa',
+                'status_akun'   => 'aktif',
+            ]);
+
+            if ($request->filled('nik')) {
+                Penyewa::create([
+                    'user_id'              => $newUser->id,
+                    'nik'                  => $request->nik,
+                    'jenis_kelamin'        => $request->jenis_kelamin ?? 'laki-laki',
+                    'alamat_asal'          => $request->alamat_asal ?? '-',
+                    'pekerjaan'            => $request->pekerjaan,
+                    'nama_kontak_darurat'  => $request->nama_kontak_darurat,
+                    'nomor_kontak_darurat' => $request->nomor_kontak_darurat,
+                    'foto_ktp'             => $fotoKtpPath,
+                ]);
+            }
+
+            return $newUser;
+        });
+
+        $token = auth()->guard('api')->login($user);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registrasi akun berhasil',
+            'user'    => $user->load('penyewa'),
+            'token'   => $token,
+        ], 201);
+    }
+
+    public function googleAuth(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email'    => 'required|email',
+            'nama'     => 'nullable|string|max:100',
+            'password' => 'nullable|string|min:8',
+        ], [
+            'password.min' => 'Kata sandi minimal terdiri dari 8 karakter.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        $user = User::where('email', $request->email)->first();
+
+        // Jika akun Google sudah terdaftar -> langsung login
+        if ($user) {
+            if ($user->status_akun === 'nonaktif') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Akun Anda sedang dinonaktifkan oleh pengelola.',
+                ], 403);
+            }
+
+            $token = auth()->guard('api')->login($user);
+
+            return response()->json([
+                'success' => true,
+                'action'  => 'login',
+                'message' => 'Berhasil masuk dengan akun Google',
+                'user'    => $user->load('penyewa'),
+                'token'   => $token,
+            ], 200);
+        }
+
+        // Jika belum terdaftar dan belum mengirim password -> minta buat password terlebih dahulu
+        if (!$request->filled('password')) {
+            $derivedName = $request->filled('nama')
+                ? $request->nama
+                : ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $request->email)[0]));
+
+            return response()->json([
+                'success'        => true,
+                'needs_password' => true,
+                'email'          => $request->email,
+                'nama'           => $derivedName,
+                'message'        => 'Silakan buat kata sandi untuk menyelesaikan pendaftaran akun Google Anda.',
+            ], 200);
+        }
+
+        // Jika belum terdaftar dan sudah mengisi password -> buat akun penyewa baru
+        $defaultNama = $request->filled('nama')
+            ? $request->nama
+            : ucwords(str_replace(['.', '_', '-'], ' ', explode('@', $request->email)[0]));
+
+        $newUser = User::create([
+            'nama'          => $defaultNama,
+            'email'         => $request->email,
+            'password'      => bcrypt($request->password),
+            'nomor_telepon' => $request->nomor_telepon ?: '-',
+            'role'          => 'penyewa',
+            'status_akun'   => 'aktif',
+        ]);
+
+        $token = auth()->guard('api')->login($newUser);
+
+        return response()->json([
+            'success' => true,
+            'action'  => 'register',
+            'message' => 'Pendaftaran dengan Google berhasil',
+            'user'    => $newUser->load('penyewa'),
+            'token'   => $token,
+        ], 201);
     }
 
     public function login(Request $request)

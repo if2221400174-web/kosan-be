@@ -16,8 +16,8 @@ class TagihanController extends Controller
 
         $query = Tagihan::with(['kontrakSewa.penyewa.user', 'kontrakSewa.kamar', 'pembayaran']);
 
-        if ($user && $user->role === 'penyewa' && $user->penyewa) {
-            $penyewaId = $user->penyewa->id;
+        if ($user && $user->role === 'penyewa') {
+            $penyewaId = $user->penyewa?->id ?? 0;
             $query->whereHas('kontrakSewa', function ($q) use ($penyewaId) {
                 $q->where('penyewa_id', $penyewaId);
             });

@@ -15,8 +15,8 @@ class LaporanController extends Controller
 
         $query = Laporan::with(['penyewa.user', 'kamar', 'petugas']);
 
-        if ($user && $user->role === 'penyewa' && $user->penyewa) {
-            $query->where('penyewa_id', $user->penyewa->id);
+        if ($user && $user->role === 'penyewa') {
+            $query->where('penyewa_id', $user->penyewa?->id ?? 0);
         }
 
         $laporan = $query->get();

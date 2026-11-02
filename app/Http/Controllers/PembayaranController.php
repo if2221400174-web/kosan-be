@@ -17,8 +17,8 @@ class PembayaranController extends Controller
 
         $query = Pembayaran::with(['tagihan.kontrakSewa.penyewa.user', 'tagihan.kontrakSewa.kamar', 'verifikator']);
 
-        if ($user && $user->role === 'penyewa' && $user->penyewa) {
-            $penyewaId = $user->penyewa->id;
+        if ($user && $user->role === 'penyewa') {
+            $penyewaId = $user->penyewa?->id ?? 0;
             $query->whereHas('tagihan.kontrakSewa', function ($q) use ($penyewaId) {
                 $q->where('penyewa_id', $penyewaId);
             });
@@ -146,6 +146,17 @@ class PembayaranController extends Controller
                     $tagihan->update(['status_tagihan' => 'sebagian']);
                 } else {
                     $tagihan->update(['status_tagihan' => 'belum_bayar']);
+                }
+
+                // Jika pembayaran diterima dan kontrak masih berstatus 'menunggu' (booking baru), otomatis aktifkan kontrak & kamar
+                if ($request->status_pembayaran === 'diterima' && $tagihan->kontrakSewa) {
+                    $kontrak = $tagihan->kontrakSewa;
+                    if ($kontrak->status_kontrak === 'menunggu') {
+                        $kontrak->update(['status_kontrak' => 'aktif']);
+                        if ($kontrak->kamar) {
+                            $kontrak->kamar->update(['status_kamar' => 'terisi']);
+                        }
+                    }
                 }
             }
         });
